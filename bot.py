@@ -44,6 +44,22 @@ def ReTrieveFile(input_file_name, output_file_name):
     return output_file_name
 
 
+def ReTrieveURL(input_url, output_file_name):
+    if os.path.exists(output_file_name):
+        os.remove(output_file_name)
+    headers = {
+        "X-API-Key": Config.REM_BG_API_KEY,
+    }
+    data = {
+      "image_url": input_url
+    }
+    r = requests.post("https://api.remove.bg/v1.0/removebg", headers=headers, data=data, allow_redirects=True, stream=True)
+    with open(output_file_name, 'wb') as fd:
+        for chunk in r.iter_content(chunk_size=Config.CHUNK_SIZE):
+            fd.write(chunk)
+    return output_file_name
+
+
 # the Telegram trackings
 from chatbase import Message
 
@@ -119,7 +135,7 @@ By uploading an image or URL, you agree to ReMove.BG's [Terms of Service](https:
 
 @run_async
 def got_photo(bot: Bot, update: Update):
-    TRChatBase(update.message.chat_id, update.message.text, "start")
+    TRChatBase(update.message.chat_id, update.message.text, "got_photo")
     msg = update.effective_message # type: Optional[Message]
     from_user_id = update.effective_chat.id # type: Optional[Chat]
     file_id = msg.photo[-1].file_id
@@ -138,6 +154,23 @@ def got_photo(bot: Bot, update: Update):
     os.remove(out_put_file_name)
 
 
+@run_async
+def got_link(bot: Bot, update: Update):
+    TRChatBase(update.message.chat_id, update.message.text, "got_link")
+    msg = update.effective_message # type: Optional[Message]
+    from_user_id = update.effective_chat.id # type: Optional[Chat]
+    input_url = msg.text
+    output_file_name = "{}/{}_nobg.jpg".format(Config.DOWNLOAD_LOCATION, from_user_id)
+    out_put_file_name = ReTrieveURL(input_url, output_file_name)
+    bot.send_document(
+        chat_id=update.message.chat_id,
+        reply_to_message_id=update.message.message_id,
+        document=open(out_put_file_name, "rb")
+    )
+    # clean up after send
+    os.remove(out_put_file_name)
+
+
 def error(bot, update, error):
     """Log Errors caused by Updates."""
     # TRChatBase(update.message.chat_id, update.message.text, "error")
@@ -153,6 +186,7 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(CommandHandler('rate', rate))
     updater.dispatcher.add_handler(CommandHandler('version', version))
     updater.dispatcher.add_handler(MessageHandler(Filters.photo, got_photo))
+    updater.dispatcher.add_handler(MessageHandler(Filters.regex(pattern=".*http.*"), got_link))
     updater.dispatcher.add_error_handler(error)
     if ENV:
         updater.start_webhook(
